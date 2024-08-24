@@ -66,8 +66,8 @@ class LiDARInstance3DBoxes(BaseInstance3DBoxes):
                (x0, y0, z1) + ----------- +   + (x1, y1, z0)
                             |  /      .   |  /
                             | / origin    | /
-            left y<-------- + ----------- + (x0, y1, z0)
-                (x0, y0, z0)
+            left y<-------- + ----------- + (x0, y1, z0); 3
+                (x0, y0, z0); 0
         """
         if self.tensor.numel() == 0:
             return torch.empty([0, 8, 3], device=self.tensor.device)

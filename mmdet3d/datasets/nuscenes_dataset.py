@@ -237,8 +237,13 @@ class NuScenesDataset(Custom3DDataset):
             sweeps=info['sweeps'],
             timestamp=info['timestamp'] / 1e6,
         )
-        if 'ann_infos' in info:
-            input_dict['ann_infos'] = info['ann_infos']
+
+        if not self.test_mode:
+            annos = self.get_ann_info(index)
+            input_dict['ann_info'] = annos
+
+        if 'ann_info' in info:
+            input_dict['ann_info'] = info['ann_info']
         if self.modality['use_camera']:
             if self.img_info_prototype == 'mmcv':
                 image_paths = []
@@ -364,12 +369,18 @@ class NuScenesDataset(Custom3DDataset):
             labels = det['labels_3d'].numpy()
             sample_token = self.data_infos[sample_id]['token']
 
-            trans = self.data_infos[sample_id]['cams'][
-                self.ego_cam]['ego2global_translation']
-            rot = self.data_infos[sample_id]['cams'][
-                self.ego_cam]['ego2global_rotation']
-            rot = pyquaternion.Quaternion(rot)
+            # trans = self.data_infos[sample_id]['cams'][
+            #     self.ego_cam]['ego2global_translation']
+            # rot = self.data_infos[sample_id]['cams'][
+            #     self.ego_cam]['ego2global_rotation']
+            # rot = pyquaternion.Quaternion(rot)
             annos = list()
+            lidar2ego_trans = self.data_infos[sample_id]['lidar2ego_translation']
+            lidar2ego_rot = self.data_infos[sample_id]['lidar2ego_rotation']
+            lidar2ego_rot = pyquaternion.Quaternion(lidar2ego_rot)
+            ego2global_trans = self.data_infos[sample_id]['ego2global_translation']
+            ego2global_rot = self.data_infos[sample_id]['ego2global_rotation']
+            ego2global_rot = pyquaternion.Quaternion(ego2global_rot)
             for i, box in enumerate(boxes):
                 name = mapped_class_names[labels[i]]
                 center = box[:3]
@@ -379,8 +390,23 @@ class NuScenesDataset(Custom3DDataset):
                 box_vel.append(0)
                 quat = pyquaternion.Quaternion(axis=[0, 0, 1], radians=box_yaw)
                 nusc_box = NuScenesBox(center, wlh, quat, velocity=box_vel)
-                nusc_box.rotate(rot)
-                nusc_box.translate(trans)
+
+                # Move box to ego vehicle coord system
+                nusc_box.rotate(lidar2ego_rot)
+                nusc_box.translate(lidar2ego_trans)
+
+                # filter det in ego.
+                # todo: needed?
+                # cls_range_map = self.eval_detection_configs.class_range
+                # radius = np.linalg.norm(nusc_box.center[:2], 2)
+                # det_range = cls_range_map[name]
+                # if radius > det_range:
+                #     continue
+
+                # Move box to global coord system
+                nusc_box.rotate(ego2global_rot)
+                nusc_box.translate(ego2global_trans)
+
                 if np.sqrt(nusc_box.velocity[0]**2 +
                            nusc_box.velocity[1]**2) > 0.2:
                     if name in [
