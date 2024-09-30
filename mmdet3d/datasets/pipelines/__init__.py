@@ -7,7 +7,7 @@ from .loading import (LoadAnnotations3D, LoadAnnotationsBEVDepth,
                       LoadPointsFromDict, LoadPointsFromFile,
                       LoadPointsFromMultiSweeps, NormalizePointsColor,
                       PointSegClassMapping, PointToMultiViewDepth,
-                      PrepareImageInputs, LoadOccGTFromFile)
+                      PrepareImageInputs, LoadOccGTFromFile, LoadRadarPointsMultiSweeps)
 from .test_time_aug import MultiScaleFlipAug3D
 # yapf: disable
 from .transforms_3d import (AffineResize, BackgroundPointsFilter,
@@ -18,7 +18,7 @@ from .transforms_3d import (AffineResize, BackgroundPointsFilter,
                             PointShuffle, PointsRangeFilter,
                             RandomDropPointsColor, RandomFlip3D,
                             RandomJitterPoints, RandomRotate, RandomShiftScale,
-                            RangeLimitedRandomCrop, VoxelBasedPointSampler)
+                            RangeLimitedRandomCrop, VoxelBasedPointSampler, RadarPointsRangeFilter)
 
 __all__ = [
     'ObjectSample', 'RandomFlip3D', 'ObjectNoise', 'GlobalRotScaleTrans',
@@ -34,5 +34,5 @@ __all__ = [
     'LoadPointsFromDict', 'MultiViewWrapper', 'RandomRotate',
     'RangeLimitedRandomCrop', 'PrepareImageInputs',
     'LoadAnnotationsBEVDepth', 'PointToMultiViewDepth',
-    'LoadOccGTFromFile'
+    'LoadOccGTFromFile', 'LoadRadarPointsMultiSweeps', 'RadarPointsRangeFilter'
 ]

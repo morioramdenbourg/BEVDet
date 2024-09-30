@@ -94,6 +94,7 @@ class RandomFlip3D(RandomFlip):
             flip_ratio=flip_ratio_bev_horizontal, **kwargs)
         self.sync_2d = sync_2d
         self.flip_ratio_bev_vertical = flip_ratio_bev_vertical
+        self.flip_ratio_bev_horizontal = flip_ratio_bev_horizontal
         if flip_ratio_bev_horizontal is not None:
             assert isinstance(
                 flip_ratio_bev_horizontal,
@@ -157,6 +158,11 @@ class RandomFlip3D(RandomFlip):
                 into result dict.
         """
         # flip 2D image and its annotations
+
+        if 'points' not in input_dict:
+            points = input_dict['radar']
+            input_dict['points'] = points
+
         super(RandomFlip3D, self).__call__(input_dict)
 
         if self.sync_2d:
@@ -165,7 +171,7 @@ class RandomFlip3D(RandomFlip):
         else:
             if 'pcd_horizontal_flip' not in input_dict:
                 flip_horizontal = True if np.random.rand(
-                ) < self.flip_ratio else False
+                ) < self.flip_ratio_bev_horizontal else False
                 input_dict['pcd_horizontal_flip'] = flip_horizontal
             if 'pcd_vertical_flip' not in input_dict:
                 flip_vertical = True if np.random.rand(
@@ -833,6 +839,9 @@ class GlobalRotScaleTrans(object):
         if 'transformation_3d_flow' not in input_dict:
             input_dict['transformation_3d_flow'] = []
 
+        points = input_dict['radar']
+        input_dict['points'] = points
+
         self._rot_bbox_points(input_dict)
 
         if 'pcd_scale_factor' not in input_dict:
@@ -981,6 +990,29 @@ class PointsRangeFilter(object):
         repr_str = self.__class__.__name__
         repr_str += f'(point_cloud_range={self.pcd_range.tolist()})'
         return repr_str
+
+@PIPELINES.register_module()
+class RadarPointsRangeFilter(PointsRangeFilter):
+    """Filter points by the range.
+
+    Args:
+        point_cloud_range (list[float]): Point cloud range.
+    """
+
+    def __call__(self, input_dict):
+        """Call function to filter points by the range.
+
+        Args:
+            input_dict (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Results after filtering, 'points', 'pts_instance_mask'
+                and 'pts_semantic_mask' keys are updated in the result dict.
+        """
+        if 'points' not in input_dict:
+            points = input_dict['radar']
+            input_dict['points'] = points
+        return super(RadarPointsRangeFilter, self).__call__(input_dict)
 
 
 @PIPELINES.register_module()

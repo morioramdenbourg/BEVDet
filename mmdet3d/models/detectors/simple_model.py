@@ -16,14 +16,7 @@ class SimpleModel(CenterPoint):
         if not self.with_pts_bbox:
             return None
 
-        # if self.training:
         voxels, num_points, coors = self.voxelize(pts)
-        # else:
-        #     voxels, num_points, coors = self.voxelize([pts])
-
-        # self.write_points_to_file(pts, img_metas)
-
-        # voxel_features = self.pts_voxel_encoder(voxels, num_points, coors)
         voxel_features = torch.mean(voxels, dim=1)
         batch_size = coors[-1, 0] + 1
         x = self.pts_middle_encoder(voxel_features, coors, batch_size)
@@ -39,15 +32,11 @@ class SimpleModel(CenterPoint):
                           img_metas,
                           gt_bboxes_ignore=None):
         outs = self.pts_bbox_head(pts_feats)
-
-        # preds = self.pts_bbox_head.get_bboxes(outs, img_metas)
-        # self.write_bboxes_to_files(gt_bboxes_3d, gt_labels_3d, preds, img_metas)
-
         loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
         losses = self.pts_bbox_head.loss(*loss_inputs)
         return losses
 
-    def write_bboxes_to_files(self, gt_bboxes_3d, gt_labels_3d, preds, img_metas):
+    def write_bboxes_to_files(self, gt_bboxes_3d, gt_labels_3d, img_metas):
         for index, meta in enumerate(img_metas):
             sample_token = meta['sample_idx']
             print(f'Writing bboxes to {self.results_dir} for sample {sample_token}')
@@ -56,11 +45,6 @@ class SimpleModel(CenterPoint):
             sample_gt_labels_3d = gt_labels_3d[index]
             sample_gt_file_name = self.results_dir + '/' + sample_token + '_gt.pth'
             torch.save((sample_gt_bboxes_3d, sample_gt_labels_3d), sample_gt_file_name)
-
-            # write predictions to file (in lidar)
-            pred = preds[index]
-            pred_file_name = self.results_dir + '/' + sample_token + '_predictions.pth'
-            torch.save(pred, pred_file_name)
 
     def write_points_to_file(self, pts, img_metas):
         for index, meta in enumerate(img_metas):

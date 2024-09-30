@@ -5,6 +5,7 @@ import mmcv
 import numpy as np
 import torch
 from PIL import Image
+from nuscenes.utils.data_classes import RadarPointCloud
 from pyquaternion import Quaternion
 
 from mmdet3d.core.points import BasePoints, get_points_type
@@ -268,6 +269,259 @@ class LoadPointsFromMultiSweeps(object):
     def __repr__(self):
         """str: Return a string that describes the module."""
         return f'{self.__class__.__name__}(sweeps_num={self.sweeps_num})'
+
+
+@PIPELINES.register_module()
+class LoadRadarPointsMultiSweeps(object):
+    """Load radar points from multiple sweeps.
+    This is usually used for nuScenes dataset to utilize previous sweeps.
+    Args:
+        sweeps_num (int): Number of sweeps. Defaults to 10.
+        load_dim (int): Dimension number of the loaded points. Defaults to 5.
+        use_dim (list[int]): Which dimension to use. Defaults to [0, 1, 2, 4].
+        file_client_args (dict): Config dict of file clients, refer to
+            https://github.com/open-mmlab/mmcv/blob/master/mmcv/fileio/file_client.py
+            for more details. Defaults to dict(backend='disk').
+        pad_empty_sweeps (bool): Whether to repeat keyframe when
+            sweeps is empty. Defaults to False.
+        remove_close (bool): Whether to remove close points.
+            Defaults to False.
+        test_mode (bool): If test_model=True used for testing, it will not
+            randomly sample sweeps but select the nearest N frames.
+            Defaults to False.
+    """
+
+    def __init__(
+            self,
+            load_dim=18,
+            use_dim=[0, 1, 2, 3, 4],
+            sweeps_num=5,
+            file_client_args=dict(backend="disk"),
+            max_num=700,
+            pc_range=[-51.2, -51.2, -5.0, 51.2, 51.2, 3.0],
+            test_mode=False,
+            remove_close=3.0,
+            use_sweeps=5,
+            drop_ratio=0.0,
+    ):
+        self.load_dim = load_dim
+        self.use_dim = use_dim
+        self.sweeps_num = sweeps_num
+        self.file_client_args = file_client_args.copy()
+        self.file_client = None
+        self.max_num = max_num * sweeps_num
+        self.test_mode = test_mode
+        self.pc_range = pc_range
+        self.remove_close = remove_close
+        self.use_sweeps = use_sweeps
+        self.drop_ratio = drop_ratio
+
+    def _load_points(self, pts_filename):
+        """Private function to load point clouds data.
+        Args:
+            pts_filename (str): Filename of point clouds data.
+        Returns:
+            np.ndarray: An array containing point clouds data.
+            [N, 18]
+        """
+        RadarPointCloud.disable_filters()
+        radar_obj = RadarPointCloud.from_file(pts_filename)
+
+        # [18, N]
+        points = radar_obj.points
+
+        return points.transpose().astype(np.float32)
+
+    def _pad_or_drop(self, points):
+        """
+        points: [N, 18]
+        """
+        num_points = points.shape[0]
+
+        if num_points == self.max_num:
+            masks = np.ones((num_points, 1), dtype=points.dtype)
+
+            return points, masks
+
+        if num_points > self.max_num:
+            points = np.random.permutation(points)[: self.max_num, :]
+            masks = np.ones((self.max_num, 1), dtype=points.dtype)
+
+            return points, masks
+
+        if num_points < self.max_num:
+            zeros = np.zeros(
+                (self.max_num - num_points, points.shape[1]), dtype=points.dtype
+            )
+            masks = np.ones((num_points, 1), dtype=points.dtype)
+
+            points = np.concatenate((points, zeros), axis=0)
+            masks = np.concatenate((masks, zeros.copy()[:, [0]]), axis=0)
+
+            return points, masks
+
+    def __call__(self, results):
+        """Call function to load multi-sweep point clouds from files.
+        Args:
+            results (dict): Result dict containing multi-sweep point cloud \
+                filenames.
+        Returns:
+            dict: The result dict containing the multi-sweep points data. \
+                Added key and value are described below.
+                - points (np.ndarray | :obj:`BasePoints`): Multi-sweep point \
+                    cloud arrays.
+        """
+        radars_dict = results["radar"]
+
+        points_sweep_list = []
+
+        # TODO: randomly drop one sweep:
+        for key, sweeps in radars_dict.items():
+            # if self.use_sweeps < self.sweeps_num:
+            #     if len(sweeps) < self.use_sweeps:
+            #         idxes = list(range(len(sweeps)))
+            #     else:
+            #         idxes = np.random.choice(len(sweeps), self.use_sweeps, replace=False)
+            if len(sweeps) < self.sweeps_num:
+                idxes = list(range(len(sweeps)))
+            else:
+                idxes = list(range(self.sweeps_num))
+
+            ts = sweeps[0]["timestamp"] * 1e-6
+            for idx in idxes:
+                sweep = sweeps[idx]
+
+                points_sweep = self._load_points(sweep["data_path"])
+                if self.remove_close:
+                    points_sweep = self._remove_close(points_sweep, radius=self.remove_close)
+
+                points_sweep = np.copy(points_sweep).reshape(-1, self.load_dim)
+
+                # timestamp
+                timestamp = sweep["timestamp"] * 1e-6
+                time_diff = ts - timestamp
+                time_diff = np.ones((points_sweep.shape[0], 1)) * time_diff
+
+                # velocity compensated by the ego motion in sensor frame
+                # velo_comp = points_sweep[:, 8:10]
+                # velo_comp = np.concatenate(
+                #     (velo_comp, np.zeros((velo_comp.shape[0], 1))), 1
+                # )
+
+                # w, x, y, z = sweep["sensor2ego_rotation"]
+                # sweep sensor to sweep ego
+                # sensor2ego_rot = np.array(Quaternion(w, x, y, z).rotation_matrix)
+                # sensor2ego_tran = np.array(sweep["sensor2ego_translation"])
+                # sensor2ego = sensor2ego_rot.new_zeros((4, 4))
+                # sensor2ego[3, 3] = 1
+                # sensor2ego[:3, :3] = sensor2ego_rot
+                # sensor2ego[:3, -1] = sensor2ego_tran
+
+                # velo_comp = velo_comp @ sensor2ego_rot.T
+                # velo_comp = velo_comp[:, :2]
+
+                # velocity in sensor frame
+                # velo = points_sweep[:, 6:8]
+                # velo = np.concatenate((velo, np.zeros((velo.shape[0], 1))), 1)
+                # velo = velo @ sensor2ego_rot.T
+                # velo = velo[:, :2]
+
+                radar2lidar = np.eye(4, dtype=np.float32)
+                radar2lidar[:3, :3] = sweep['sensor2lidar_rotation']
+                radar2lidar[:3, 3] = sweep['sensor2lidar_translation']
+
+                # velocity compensated by the ego motion in sensor frame
+                velo_comp = points_sweep[:, 8:10]
+                velo_comp = np.concatenate(
+                    (velo_comp, np.zeros((velo_comp.shape[0], 1))), 1
+                )
+                velo_comp = velo_comp @ radar2lidar[:3, :3].T
+                velo_comp = velo_comp[:, :2]
+
+                # velocity in sensor frame
+                velo = points_sweep[:, 6:8]
+                velo = np.concatenate((velo, np.zeros((velo.shape[0], 1))), 1)
+                velo = velo @ radar2lidar[:3, :3].T
+                velo = velo[:, :2]
+
+                points_sweep[:, :3] = points_sweep[:, :3] @ radar2lidar[:3, :3].T
+                points_sweep[:, :3] += radar2lidar[:3, 3]
+
+                # points_sweep_ = np.concatenate(
+                #     [
+                #         points_sweep[:, :6],
+                #         velo,  # 6, 7
+                #         velo_comp,  # 8, 9
+                #         points_sweep[:, 10:],
+                #         time_diff,  # 19
+                #     ],
+                #     axis=1,
+                # )
+
+                points_sweep_augmented = np.concatenate(
+                    [
+                        points_sweep[:, :6],
+                        velo, # 6, 7
+                        velo_comp, # 8, 9
+                        points_sweep[:, 10:],
+                        time_diff # 19
+                    ],
+                    axis=1
+                )
+
+                points_sweep_augmented = points_sweep_augmented[:, self.use_dim]
+                points_sweep_list.append(points_sweep_augmented)
+
+        points = np.concatenate(points_sweep_list, axis=0)
+
+        # normalize points
+        # points[:, 0:1] = (points[:, 0:1] - self.pc_range[0]) / (
+        #     self.pc_range[3] - self.pc_range[0]
+        # )
+        # points[:, 1:2] = (points[:, 1:2] - self.pc_range[1]) / (
+        #     self.pc_range[4] - self.pc_range[1]
+        # )
+        # points[:, 2:3] = (points[:, 2:3] - self.pc_range[2]) / (
+        #     self.pc_range[5] - self.pc_range[2]
+        # )
+        if self.drop_ratio > 0:
+            drop_idx = np.random.uniform(size=points.shape[0])  # randomly drop points
+            points = points[drop_idx > self.drop_ratio]
+
+        if self.max_num > 0:
+            points, mask = self._pad_or_drop(points)
+        else:
+            mask = np.ones((points.shape[0], points.shape[1]), dtype=points.dtype)
+
+        # points = np.concatenate((points, mask), axis=-1)
+        results["radar"] = BasePoints(points.astype(np.float32), points_dim=len(self.use_dim))
+        return results
+
+    def __repr__(self):
+        """str: Return a string that describes the module."""
+        return f"{self.__class__.__name__}(sweeps_num={self.sweeps_num})"
+
+    def _remove_close(self, points, radius=1.0):
+        """Removes point too close within a certain radius from origin.
+
+        Args:
+            points (np.ndarray | :obj:`BasePoints`): Sweep points.
+            radius (float, optional): Radius below which points are removed.
+                Defaults to 1.0.
+
+        Returns:
+            np.ndarray: Points after removing.
+        """
+        if isinstance(points, np.ndarray):
+            points_numpy = points
+        elif isinstance(points, BasePoints):
+            points_numpy = points.tensor.numpy()
+        else:
+            raise NotImplementedError
+        x_filt = np.abs(points_numpy[:, 0]) < radius
+        y_filt = np.abs(points_numpy[:, 1]) < radius
+        not_close = np.logical_not(np.logical_and(x_filt, y_filt))
+        return points[not_close]
 
 
 @PIPELINES.register_module()

@@ -177,7 +177,10 @@ class BasePoints(object):
         Args:
             bev_direction (str): Flip direction (horizontal or vertical).
         """
-        pass
+        if bev_direction == 'horizontal':
+            self.tensor[:, 1] = -self.tensor[:, 1]
+        elif bev_direction == 'vertical':
+            self.tensor[:, 0] = -self.tensor[:, 0]
 
     def translate(self, trans_vector):
         """Translate points with the given translation vector.

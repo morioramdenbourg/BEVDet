@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 from mmcv.cnn import build_norm_layer
+from mmdet3d.models import CustomResNet
 
 from torch.utils.checkpoint import checkpoint
 from mmdet3d.models.backbones.resnet import ConvModule
