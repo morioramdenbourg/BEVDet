@@ -68,51 +68,21 @@ class KPPillarsBEV(CenterPoint):
         pts_coords = torch.cat(pts_coords, dim=0)
         x = torch.cat(x, dim=0)
 
-        for preprocessor in self.pts_preprocessors:
-            x = preprocessor(pts_coords, pts_coords, q_batches, q_batches, x)
+        # for preprocessor in self.pts_preprocessors:
+        #     x = preprocessor(pts_coords, pts_coords, q_batches, q_batches, x)
 
         # aug_pts = [torch.cat([c, f], dim=1) for c, f in zip(pts_coords, x)]
 
         aug_pts = torch.cat([pts_coords, x], dim=1)
         aug_pts = aug_pts.split(q_batches, dim=0)
 
-        # self.r = random.randint(1, 1000)
-        # if self.r == 1:
-        #     write_points_to_file('./vis/kppillarsbev_nus', aug_pts, img_metas, file_name='pts_before_voxelize')
-
         grids = []
         for index in range(self.num_layers):
             x = self.kpbev(aug_pts, index)
             grids.append(x[0])
 
-        # if self.r == 1:
-        #     anchor_pts = []
-        #     unique_sample_ids = coors[:, 0].unique()
-        #     for sample_id in unique_sample_ids:
-        #         sample_id_mask = coors[:, 0] == sample_id
-        #         valid_anchors = anchors[sample_id_mask]
-        #         valid_x = x[sample_id_mask]
-        #         anchor_pts.append(torch.cat([valid_anchors, valid_x], dim=1))
-        #     write_points_to_file('./vis/kppillarsbev_nus', anchor_pts, img_metas, file_name='pts_after_middle_encoder')
-
         # FPN
         x = self.pts_neck(grids)
 
         return [x]
-
-    def forward_pts_train(self,
-                          pts_feats,
-                          gt_bboxes_3d,
-                          gt_labels_3d,
-                          img_metas,
-                          gt_bboxes_ignore=None):
-
-        outs = self.pts_bbox_head(pts_feats)
-        loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
-        losses = self.pts_bbox_head.loss(*loss_inputs)
-
-        # if self.r == 1:
-        #     write_bboxes_to_files('./vis/kppillarsbev_nus', gt_bboxes_3d, gt_labels_3d, img_metas, losses)
-
-        return losses
 

@@ -9,11 +9,11 @@ class_names = [
 ]
 data_root = 'data/nuscenes/'
 dataset_type = 'NuScenesRadarDataset'
-# config_file_prefix = 'full'
-config_file_prefix = 'small'
+config_file_prefix = 'full'
+# config_file_prefix = 'small'
 workflow = [('train', 1), ('val', 1)]
 
-batch_size = 7
+batch_size = 6
 optimizer = dict(type='AdamW', lr=5e-5 * batch_size, weight_decay=0.01) # 5e-5 * batch_size for radar, same weight decay
 
 # voxels
@@ -143,6 +143,7 @@ model = dict(
             out_channels=64,
             point_cloud_range=point_cloud_range,
             voxel_size=voxel_sizes[0],
+            norm_cfg=dict(type='GN', num_groups=num_groups),
             kpconv_args=dict(
                 block_name='KPBEVEncoder_KPConv_S0',
                 in_dim=64,
@@ -171,6 +172,7 @@ model = dict(
             out_channels=64,
             point_cloud_range=point_cloud_range,
             voxel_size=voxel_sizes[1],
+            norm_cfg=dict(type='GN', num_groups=num_groups),
             kpconv_args=dict(
                 block_name='KPBEVEncoder_KPConv_S1',
                 in_dim=64,
@@ -199,6 +201,7 @@ model = dict(
             out_channels=64,
             point_cloud_range=point_cloud_range,
             voxel_size=voxel_sizes[2],
+            norm_cfg=dict(type='GN', num_groups=num_groups),
             kpconv_args=dict(
                 block_name='KPBEVEncoder_KPConv_S2',
                 in_dim=64,
@@ -227,6 +230,7 @@ model = dict(
             out_channels=64,
             point_cloud_range=point_cloud_range,
             voxel_size=voxel_sizes[3],
+            norm_cfg=dict(type='GN', num_groups=num_groups),
             kpconv_args=dict(
                 block_name='KPBEVEncoder_KPConv_S3',
                 in_dim=64,
@@ -278,7 +282,7 @@ model = dict(
             with_cp=False,
             norm_cfg=dict(type='GN', num_groups=num_groups),
             numC_input=64,
-            num_layer=[1],
+            num_layer=[2],
             stride=[1],
             num_channels=[64]
         ),
@@ -287,7 +291,7 @@ model = dict(
             with_cp=False,
             norm_cfg=dict(type='GN', num_groups=num_groups),
             numC_input=64,
-            num_layer=[1],
+            num_layer=[2],
             stride=[1],
             num_channels=[64 * 2]
         ),
@@ -296,7 +300,7 @@ model = dict(
             with_cp=False,
             norm_cfg=dict(type='GN', num_groups=num_groups),
             numC_input=64,
-            num_layer=[1],
+            num_layer=[2],
             stride=[1],
             num_channels=[64 * 4]
         ),
@@ -305,7 +309,7 @@ model = dict(
             with_cp=False,
             norm_cfg=dict(type='GN', num_groups=num_groups),
             numC_input=64,
-            num_layer=[1],
+            num_layer=[2],
             stride=[1],
             num_channels=[64 * 8]
         )
@@ -322,7 +326,7 @@ model = dict(
                 with_cp=False,
                 norm_cfg=dict(type='GN', num_groups=num_groups),
                 numC_input=64,
-                num_layer=[1],
+                num_layer=[2],
                 stride=[1],
                 num_channels=[64]
             ),
@@ -375,10 +379,11 @@ model = dict(
             voxel_size=voxel_size_head[:2],
             code_size=9),
         separate_head=dict(
-            type='SeparateHead', init_bias=-2.19, final_kernel=3),
+            type='SeparateHead', init_bias=-2.19, final_kernel=3, norm_cfg=dict(type='GN', num_groups=num_groups)),
         loss_cls=dict(type='GaussianFocalLoss', reduction='mean'),
         loss_bbox=dict(type='L1Loss', reduction='mean', loss_weight=0.25),
-        norm_bbox=True
+        norm_bbox=True,
+        norm_cfg=dict(type='GN', num_groups=num_groups)
     ),
     train_cfg=dict(
         pts=dict(

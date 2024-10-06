@@ -1,4 +1,5 @@
 import torch
+from mmcv.cnn import build_norm_layer
 from torch import nn
 from ..builder import VOXEL_ENCODERS
 from ...ops.kpconv.models.blocks import SimpleBlock
@@ -12,6 +13,7 @@ class KPBEVEncoder(nn.Module):
                  out_channels,
                  point_cloud_range,
                  voxel_size,
+                 norm_cfg,
                  kpconv_args):
         super(KPBEVEncoder, self).__init__()
         self.in_channels = in_channels
@@ -21,12 +23,15 @@ class KPBEVEncoder(nn.Module):
         self.coors_range_min = point_cloud_range[:3]
         self.voxel_size = voxel_size
 
+        linear_1_norm = build_norm_layer(norm_cfg, self.out_channels)
+        linear_2_norm = build_norm_layer(norm_cfg, self.out_channels)
+
         self.kpconv = SimpleBlock(**kpconv_args)
         self.linear_1 = nn.Sequential(nn.Linear(self.in_channels + 7, self.out_channels),
-                                      nn.BatchNorm1d(self.out_channels),
+                                      linear_1_norm[1],
                                       nn.ReLU())
         self.linear_2 = nn.Sequential(nn.Linear(self.out_channels, self.out_channels),
-                                      nn.BatchNorm1d(self.out_channels),
+                                      linear_2_norm[1],
                                       nn.ReLU())
 
     def forward(self, voxels, coors, num_points_per_voxel, pts):
