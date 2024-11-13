@@ -4,14 +4,17 @@ _base_ = [
     '../_base_/default_runtime.py'
 ]
 
+# custom_imports = dict(imports=['.BEVFusion.bevfusion'], allow_failed_imports=False)
+
 class_names = [
     'car', 'truck', 'construction_vehicle', 'bus', 'trailer', 'barrier',
     'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone'
 ]
 data_root = 'data/nuscenes/'
 dataset_type = 'NuScenesRadarDataset'
-# config_file_prefix = 'full'
-config_file_prefix = 'small'
+# dataset_type = 'NuScenesDataset'
+config_file_prefix = 'full'
+# config_file_prefix = 'small'
 workflow = [('train', 1), ('val', 1)]
 data_prefix = dict(
     pts='samples/LIDAR_TOP',
@@ -23,7 +26,7 @@ data_prefix = dict(
     CAM_BACK_LEFT='samples/CAM_BACK_LEFT',
     sweeps='sweeps/LIDAR_TOP')
 
-batch_size = 4
+batch_size = 3
 optimizer = dict(type='AdamW', lr=5e-5 * batch_size, weight_decay=0.01) # 5e-5 * batch_size for radar, same weight decay
 
 # voxels
@@ -67,22 +70,29 @@ model = dict(
     pts_voxel_layer=dict(
         max_num_points=10,
         point_cloud_range=[-54.0, -54.0, -5.0, 54.0, 54.0, 3.0],
-        voxel_size=[0.075, 0.075, 0.2],
+        # voxel_size=[0.075, 0.075, 0.2],
+        voxel_size=[0.6, 0.6, 0.2],
         max_voxels=[120000, 160000],
     ),
-    pts_middle_encoder = dict(
-        type='BEVFusionSparseEncoder',
+    # pts_middle_encoder = dict(
+    #     type='BEVFusionSparseEncoder',
+    #     in_channels=5,
+    #     sparse_shape=[1440, 1440, 41],
+    #     order=('conv', 'norm', 'act'),
+    #     norm_cfg=dict(type='BN1d', eps=0.001, momentum=0.01),
+    #     encoder_channels=((16, 16, 32), (32, 32, 64), (64, 64, 128), (128, 128)),
+    #     encoder_paddings=((0, 0, 1), (0, 0, 1), (0, 0, (1, 1, 0)), (0, 0)),
+    #     block_type='basicblock'
+    # ),
+    pts_middle_encoder=dict(
+        type='PointPillarsScatter',
         in_channels=5,
-        sparse_shape=[1440, 1440, 41],
-        order=('conv', 'norm', 'act'),
-        norm_cfg=dict(type='BN1d', eps=0.001, momentum=0.01),
-        encoder_channels=((16, 16, 32), (32, 32, 64), (64, 64, 128), (128, 128)),
-        encoder_paddings=((0, 0, 1), (0, 0, 1), (0, 0, (1, 1, 0)), (0, 0)),
-        block_type='basicblock'
+        output_shape=(180, 180),
     ),
     pts_backbone = dict(
         type='SECOND',
-        in_channels=256,
+        # in_channels=256,
+        in_channels=5,
         out_channels=[128, 256],
         layer_nums=[5, 5],
         layer_strides=[1, 2],
@@ -98,7 +108,7 @@ model = dict(
         upsample_cfg=dict(type='deconv', bias=False),
         use_conv_for_no_stride=True
     ),
-    bbox_head = dict(
+    pts_bbox_head = dict(
         type='TransFusionHead',
         num_proposals=200,
         auxiliary=True,
@@ -133,7 +143,7 @@ model = dict(
             pos_weight=-1,
             code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2],
             assigner=dict(
-                type='TransformerDecoderLayer',
+                type='HungarianAssigner3D',
                 iou_calculator=dict(type='BboxOverlaps3D', coordinate='lidar'),
                 cls_cost=dict(
                     type='mmdet.FocalLossCost',
@@ -492,17 +502,15 @@ train_pipeline = [
         type='LoadPointsFromFile',
         coord_type='LIDAR',
         load_dim=5,
-        use_dim=5,
-        backend_args=backend_args
+        use_dim=5
     ),
     dict(
         type='LoadPointsFromMultiSweeps',
         sweeps_num=9,
         load_dim=5,
-        use_dim=5,
+        use_dim=[0, 1, 2, 3, 4],
         pad_empty_sweeps=True,
-        remove_close=True,
-        backend_args=backend_args
+        remove_close=True
     ),
     dict(
         type='LoadAnnotations3D',
@@ -511,12 +519,12 @@ train_pipeline = [
         with_attr_label=False
     ),
     # dict(type='ObjectSample', db_sampler=db_sampler),
-    dict(
-        type='GlobalRotScaleTrans',
-        scale_ratio_range=[0.9, 1.1],
-        rot_range=[-0.78539816, 0.78539816],
-        translation_std=0.5
-    ),
+    # dict(
+    #     type='GlobalRotScaleTrans',
+    #     scale_ratio_range=[0.9, 1.1],
+    #     rot_range=[-0.78539816, 0.78539816],
+    #     translation_std=0.5
+    # ),
     # dict(type='BEVFusionRandomFlip3D'),
     dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
@@ -528,11 +536,15 @@ train_pipeline = [
         ]
     ),
     # dict(type='PointShuffle'),
+    dict(type='DefaultFormatBundle3D', class_names=class_names),
     dict(
-        type='Pack3DDetInputs',
+        type='Collect3D',
+        # keys=[
+        #     'points', 'img', 'gt_bboxes_3d', 'gt_labels_3d', 'gt_bboxes',
+        #     'gt_labels'
+        # ],
         keys=[
-            'points', 'img', 'gt_bboxes_3d', 'gt_labels_3d', 'gt_bboxes',
-            'gt_labels'
+          'points', 'gt_bboxes_3d', 'gt_labels_3d'
         ],
         meta_keys=[
             'cam2img', 'ori_cam2img', 'lidar2cam', 'lidar2img', 'cam2lidar',

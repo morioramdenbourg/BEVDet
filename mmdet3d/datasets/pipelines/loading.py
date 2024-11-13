@@ -1,13 +1,16 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import os
 
+import copy
 import mmcv
 import numpy as np
 import torch
 from PIL import Image
 from nuscenes.utils.data_classes import RadarPointCloud
 from pyquaternion import Quaternion
+from mmcv.image.photometric import imnormalize
 
+from mmengine.fileio import get
 from mmdet3d.core.points import BasePoints, get_points_type
 from mmdet.datasets.pipelines import LoadAnnotations, LoadImageFromFile
 from ...core.bbox import LiDARInstance3DBoxes
@@ -1197,29 +1200,27 @@ class PrepareImageInputs(object):
         cam_names = self.choose_cams()
         results['cam_names'] = cam_names
         canvas = []
+
         for cam_name in cam_names:
             cam_data = results['curr']['cams'][cam_name]
             filename = cam_data['data_path']
             img = Image.open(filename)
             post_rot = torch.eye(2)
             post_tran = torch.zeros(2)
-
             intrin = torch.Tensor(cam_data['cam_intrinsic'])
 
-            sensor2ego, ego2global = \
-                self.get_sensor_transforms(results['curr'], cam_name)
+            sensor2ego, ego2global = self.get_sensor_transforms(results['curr'], cam_name)
             # image view augmentation (resize, crop, horizontal flip, rotate)
-            img_augs = self.sample_augmentation(
-                H=img.height, W=img.width, flip=flip, scale=scale)
+            img_augs = self.sample_augmentation(H=img.height, W=img.width, flip=flip, scale=scale)
             resize, resize_dims, crop, flip, rotate = img_augs
-            img, post_rot2, post_tran2 = \
-                self.img_transform(img, post_rot,
-                                   post_tran,
-                                   resize=resize,
-                                   resize_dims=resize_dims,
-                                   crop=crop,
-                                   flip=flip,
-                                   rotate=rotate)
+            img, post_rot2, post_tran2 = self.img_transform(img,
+                                                            post_rot,
+                                                            post_tran,
+                                                            resize=resize,
+                                                            resize_dims=resize_dims,
+                                                            crop=crop,
+                                                            flip=flip,
+                                                            rotate=rotate)
 
             # for convenience, make augmentation matrices 3x3
             post_tran = torch.zeros(3)
@@ -1230,39 +1231,39 @@ class PrepareImageInputs(object):
             canvas.append(np.array(img))
             imgs.append(self.normalize_img(img))
 
-            if self.sequential:
-                assert 'adjacent' in results
-                for adj_info in results['adjacent']:
-                    filename_adj = adj_info['cams'][cam_name]['data_path']
-                    img_adjacent = Image.open(filename_adj)
-                    img_adjacent = self.img_transform_core(
-                        img_adjacent,
-                        resize_dims=resize_dims,
-                        crop=crop,
-                        flip=flip,
-                        rotate=rotate)
-                    imgs.append(self.normalize_img(img_adjacent))
+            # if self.sequential:
+            #     assert 'adjacent' in results
+            #     for adj_info in results['adjacent']:
+            #         filename_adj = adj_info['cams'][cam_name]['data_path']
+            #         img_adjacent = Image.open(filename_adj)
+            #         img_adjacent = self.img_transform_core(
+            #             img_adjacent,
+            #             resize_dims=resize_dims,
+            #             crop=crop,
+            #             flip=flip,
+            #             rotate=rotate)
+            #         imgs.append(self.normalize_img(img_adjacent))
+
             intrins.append(intrin)
             sensor2egos.append(sensor2ego)
             ego2globals.append(ego2global)
             post_rots.append(post_rot)
             post_trans.append(post_tran)
 
-        if self.sequential:
-            for adj_info in results['adjacent']:
-                post_trans.extend(post_trans[:len(cam_names)])
-                post_rots.extend(post_rots[:len(cam_names)])
-                intrins.extend(intrins[:len(cam_names)])
-
-                # align
-                for cam_name in cam_names:
-                    sensor2ego, ego2global = \
-                        self.get_sensor_transforms(adj_info, cam_name)
-                    sensor2egos.append(sensor2ego)
-                    ego2globals.append(ego2global)
+        # if self.sequential:
+        #     for adj_info in results['adjacent']:
+        #         post_trans.extend(post_trans[:len(cam_names)])
+        #         post_rots.extend(post_rots[:len(cam_names)])
+        #         intrins.extend(intrins[:len(cam_names)])
+        #
+        #         # align
+        #         for cam_name in cam_names:
+        #             sensor2ego, ego2global = \
+        #                 self.get_sensor_transforms(adj_info, cam_name)
+        #             sensor2egos.append(sensor2ego)
+        #             ego2globals.append(ego2global)
 
         imgs = torch.stack(imgs)
-
         sensor2egos = torch.stack(sensor2egos)
         ego2globals = torch.stack(ego2globals)
         intrins = torch.stack(intrins)
@@ -1333,8 +1334,7 @@ class LoadAnnotationsBEVDepth(object):
     def __call__(self, results):
         gt_boxes, gt_labels = results['ann_infos']
         gt_boxes, gt_labels = torch.Tensor(gt_boxes), torch.tensor(gt_labels)
-        rotate_bda, scale_bda, flip_dx, flip_dy = self.sample_bda_augmentation(
-        )
+        rotate_bda, scale_bda, flip_dx, flip_dy = self.sample_bda_augmentation()
         bda_mat = torch.zeros(4, 4)
         bda_mat[3, 3] = 1
         gt_boxes, bda_rot = self.bev_transform(gt_boxes, rotate_bda, scale_bda,
@@ -1359,4 +1359,453 @@ class LoadAnnotationsBEVDepth(object):
                 results['voxel_semantics'] = results['voxel_semantics'][:,::-1,...].copy()
                 results['mask_lidar'] = results['mask_lidar'][:,::-1,...].copy()
                 results['mask_camera'] = results['mask_camera'][:,::-1,...].copy()
+        return results
+
+@PIPELINES.register_module()
+class BEVLoadMultiViewImageFromFiles(LoadMultiViewImageFromFiles):
+    """Load multi channel images from a list of separate channel files.
+
+    ``BEVLoadMultiViewImageFromFiles`` adds the following keys for the
+    convenience of view transforms in the forward:
+        - 'cam2lidar'
+        - 'lidar2img'
+
+    Args:
+        to_float32 (bool): Whether to convert the img to float32.
+            Defaults to False.
+        color_type (str): Color type of the file. Defaults to 'unchanged'.
+        backend_args (dict, optional): Arguments to instantiate the
+            corresponding backend. Defaults to None.
+        num_views (int): Number of view in a frame. Defaults to 5.
+        num_ref_frames (int): Number of frame in loading. Defaults to -1.
+        test_mode (bool): Whether is test mode in loading. Defaults to False.
+        set_default_scale (bool): Whether to set default scale.
+            Defaults to True.
+    """
+    def __init__(self,
+                 to_float32=False,
+                 color_type='unchanged',
+                 backend_args=None,
+                 num_views=5,
+                 num_ref_frames=-1,
+                 test_mode=False,
+                 set_default_scale=True) -> None:
+        self.to_float32 = to_float32
+        self.color_type = color_type
+        self.backend_args = backend_args
+        self.num_views = num_views
+        # num_ref_frames is used for multi-sweep loading
+        self.num_ref_frames = num_ref_frames
+        # when test_mode=False, we randomly select previous frames
+        # otherwise, select the earliest one
+        self.test_mode = test_mode
+        self.set_default_scale = set_default_scale
+
+    def im_normalize(self, img):
+        mean = np.array([123.675, 116.28, 103.53], dtype=np.float32)
+        std = np.array([58.395, 57.12, 57.375], dtype=np.float32)
+        to_rgb = False
+        img = imnormalize(np.array(img), mean, std, to_rgb)
+        # img = torch.tensor(img).float().permute(2, 0, 1).contiguous()
+        return img
+
+    def __call__(self, results: dict):
+        """Call function to load multi-view image from files.
+
+        Args:
+            results (dict): Result dict containing multi-view image filenames.
+
+        Returns:
+            dict: The result dict containing the multi-view image data.
+            Added keys and values are described below.
+
+                - filename (str): Multi-view image filenames.
+                - img (np.ndarray): Multi-view image arrays.
+                - img_shape (tuple[int]): Shape of multi-view image arrays.
+                - ori_shape (tuple[int]): Shape of original image arrays.
+                - pad_shape (tuple[int]): Shape of padded image arrays.
+                - scale_factor (float): Scale factor.
+                - img_norm_cfg (dict): Normalization configuration of images.
+        """
+        # TODO: consider split the multi-sweep part out of this pipeline
+        # Derive the mask and transform for loading of multi-sweep data
+        if self.num_ref_frames > 0:
+            # init choice with the current frame
+            init_choice = np.array([0], dtype=np.int64)
+            num_frames = len(results['img_filename']) // self.num_views - 1
+            if num_frames == 0:  # no previous frame, then copy cur frames
+                choices = np.random.choice(
+                    1, self.num_ref_frames, replace=True)
+            elif num_frames >= self.num_ref_frames:
+                # NOTE: suppose the info is saved following the order
+                # from latest to earlier frames
+                if self.test_mode:
+                    choices = np.arange(num_frames - self.num_ref_frames,
+                                        num_frames) + 1
+                # NOTE: +1 is for selecting previous frames
+                else:
+                    choices = np.random.choice(
+                        num_frames, self.num_ref_frames, replace=False) + 1
+            elif num_frames > 0 and num_frames < self.num_ref_frames:
+                if self.test_mode:
+                    base_choices = np.arange(num_frames) + 1
+                    random_choices = np.random.choice(
+                        num_frames,
+                        self.num_ref_frames - num_frames,
+                        replace=True) + 1
+                    choices = np.concatenate([base_choices, random_choices])
+                else:
+                    choices = np.random.choice(
+                        num_frames, self.num_ref_frames, replace=True) + 1
+            else:
+                raise NotImplementedError
+            choices = np.concatenate([init_choice, choices])
+            select_filename = []
+            for choice in choices:
+                select_filename += results['img_filename'][choice *
+                                                           self.num_views:
+                                                           (choice + 1) *
+                                                           self.num_views]
+            results['img_filename'] = select_filename
+            for key in ['cam2img', 'lidar2cam']:
+                if key in results:
+                    select_results = []
+                    for choice in choices:
+                        select_results += results[key][choice *
+                                                       self.num_views:(choice +
+                                                                       1) *
+                                                       self.num_views]
+                    results[key] = select_results
+            for key in ['ego2global']:
+                if key in results:
+                    select_results = []
+                    for choice in choices:
+                        select_results += [results[key][choice]]
+                    results[key] = select_results
+            # Transform lidar2cam to
+            # [cur_lidar]2[prev_img] and [cur_lidar]2[prev_cam]
+            for key in ['lidar2cam']:
+                if key in results:
+                    # only change matrices of previous frames
+                    for choice_idx in range(1, len(choices)):
+                        pad_prev_ego2global = np.eye(4)
+                        prev_ego2global = results['ego2global'][choice_idx]
+                        pad_prev_ego2global[:prev_ego2global.
+                                            shape[0], :prev_ego2global.
+                                            shape[1]] = prev_ego2global
+                        pad_cur_ego2global = np.eye(4)
+                        cur_ego2global = results['ego2global'][0]
+                        pad_cur_ego2global[:cur_ego2global.
+                                           shape[0], :cur_ego2global.
+                                           shape[1]] = cur_ego2global
+                        cur2prev = np.linalg.inv(pad_prev_ego2global).dot(
+                            pad_cur_ego2global)
+                        for result_idx in range(choice_idx * self.num_views,
+                                                (choice_idx + 1) *
+                                                self.num_views):
+                            results[key][result_idx] = \
+                                results[key][result_idx].dot(cur2prev)
+        # Support multi-view images with different shapes
+        # TODO: record the origin shape and padded shape
+        filename, cam2img, lidar2cam, cam2lidar, lidar2img = [], [], [], [], []
+        for _, cam_item in results['images'].items():
+            filename.append(cam_item['img_path'])
+            lidar2cam.append(cam_item['lidar2cam'])
+
+            lidar2cam_array = np.array(cam_item['lidar2cam']).astype(
+                np.float32)
+            lidar2cam_rot = lidar2cam_array[:3, :3]
+            lidar2cam_trans = lidar2cam_array[:3, 3:4]
+            camera2lidar = np.eye(4)
+            camera2lidar[:3, :3] = lidar2cam_rot.T
+            camera2lidar[:3, 3:4] = -1 * np.matmul(
+                lidar2cam_rot.T, lidar2cam_trans.reshape(3, 1))
+            cam2lidar.append(camera2lidar)
+
+            cam2img_array = np.eye(4).astype(np.float32)
+            cam2img_array[:3, :3] = np.array(cam_item['cam2img']).astype(
+                np.float32)
+            cam2img.append(cam2img_array)
+            lidar2img.append(cam2img_array @ lidar2cam_array)
+
+        results['img_path'] = filename
+        results['cam2img'] = np.stack(cam2img, axis=0)
+        results['lidar2cam'] = np.stack(lidar2cam, axis=0)
+        results['cam2lidar'] = np.stack(cam2lidar, axis=0)
+        results['lidar2img'] = np.stack(lidar2img, axis=0)
+
+        results['ori_cam2img'] = copy.deepcopy(results['cam2img'])
+
+        # img is of shape (h, w, c, num_views)
+        # h and w can be different for different views
+        img_bytes = [
+            get(name, backend_args=self.backend_args) for name in filename
+        ]
+        imgs = [
+            mmcv.imfrombytes(
+                img_byte,
+                flag=self.color_type,
+                backend='pillow',
+                channel_order='rgb') for img_byte in img_bytes
+        ]
+        imgs = [self.im_normalize(img) for img in imgs]
+        # handle the image with different shape
+        img_shapes = np.stack([img.shape for img in imgs], axis=0)
+        img_shape_max = np.max(img_shapes, axis=0)
+        img_shape_min = np.min(img_shapes, axis=0)
+        assert img_shape_min[-1] == img_shape_max[-1]
+        if not np.all(img_shape_max == img_shape_min):
+            pad_shape = img_shape_max[:2]
+        else:
+            pad_shape = None
+        if pad_shape is not None:
+            imgs = [
+                mmcv.impad(img, shape=pad_shape, pad_val=0) for img in imgs
+            ]
+        img = np.stack(imgs, axis=-1)
+        # img = np.stack(imgs, axis=0)
+        if self.to_float32:
+            img = img.astype(np.float32)
+
+        results['filename'] = filename
+        # unravel to list, see `DefaultFormatBundle` in formating.py
+        # which will transpose each image separately and then stack into array
+        results['img'] = [img[..., i] for i in range(img.shape[-1])]
+        results['img_shape'] = img.shape[:2]
+        results['ori_shape'] = img.shape[:2]
+        # Set initial values for default meta_keys
+        results['pad_shape'] = img.shape[:2]
+        if self.set_default_scale:
+            results['scale_factor'] = 1.0
+        num_channels = 1 if len(img.shape) < 3 else img.shape[2]
+        results['img_norm_cfg'] = dict(
+            mean=np.zeros(num_channels, dtype=np.float32),
+            std=np.ones(num_channels, dtype=np.float32),
+            to_rgb=False)
+        results['num_views'] = self.num_views
+        results['num_ref_frames'] = self.num_ref_frames
+        return results
+
+@PIPELINES.register_module()
+class LoadImageAnnotations(object):
+
+    def __init__(self, classes):
+        self.classes = classes
+
+    def get_rotation_matrix(self, rotate_angle, scale_ratio, flip_dx, flip_dy):
+        rotate_angle = torch.tensor(rotate_angle / 180 * np.pi)
+        rot_sin = torch.sin(rotate_angle)
+        rot_cos = torch.cos(rotate_angle)
+        rot_mat = torch.Tensor([[rot_cos, -rot_sin, 0],
+                                [rot_sin, rot_cos, 0],
+                                [0, 0, 1]])
+        scale_mat = torch.Tensor([[scale_ratio, 0, 0],
+                                  [0, scale_ratio, 0],
+                                  [0, 0, scale_ratio]])
+
+        flip_mat = torch.Tensor([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        if flip_dx:
+            flip_mat = flip_mat @ torch.Tensor(
+                [
+                    [-1, 0, 0],
+                    [0, 1, 0],
+                    [0, 0, 1]
+                ]
+            )
+        if flip_dy:
+            flip_mat = flip_mat @ torch.Tensor(
+                [
+                    [1, 0, 0],
+                    [0, -1, 0],
+                    [0, 0, 1]
+                ]
+            )
+
+        rot_mat = flip_mat @ (scale_mat @ rot_mat)
+        return rot_mat
+
+    def __call__(self, input_dict):
+        rotation_angle = input_dict.get('pcd_rotation_angle', 0)
+        scale_factor = input_dict.get('pcd_scale_factor', 1.0)
+        flip_dx = input_dict.get('pcd_horizontal_flip', False)
+        flip_dy = input_dict.get('pcd_vertical_flip', False)
+        batch_aug_rotation_matrix = self.get_rotation_matrix(rotation_angle, scale_factor, flip_dx, flip_dy)
+
+        imgs, sensor2lidar, intrins, post_rots, post_trans = input_dict['img_inputs']
+        input_dict['img_inputs'] = (
+            imgs,
+            sensor2lidar,
+            intrins,
+            post_rots,
+            post_trans,
+            batch_aug_rotation_matrix
+        )
+        return input_dict
+
+@PIPELINES.register_module()
+class CustomPrepareImageInput(object):
+    """
+    Load multi channel images from a list of separate channel files.
+
+    Expects results['img_filename'] to be a list of filenames.
+
+    Args:
+        to_float32 (bool): Whether to convert the img to float32.
+            Defaults to False.
+        color_type (str): Color type of the file. Defaults to 'unchanged'.
+    """
+
+    def __init__(self, data_config, is_train=False):
+        self.is_train = is_train
+        self.data_config = data_config
+        self.normalize_img = mmlabNormalize
+
+    def get_rotation(self, h):
+        return torch.Tensor([
+            [np.cos(h), np.sin(h)],
+            [-np.sin(h), np.cos(h)],
+        ])
+
+    def image_transform(self,
+                        image,
+                        post_rot,
+                        post_tran,
+                        resize,
+                        resize_dims,
+                        crop,
+                        flip,
+                        rotate):
+        # adjust image
+        image = self.image_transform_core(image, resize_dims, crop, flip, rotate)
+
+        # post-homography transformation
+        post_rot *= resize
+        post_tran -= torch.Tensor(crop[:2])
+
+        if flip:
+            A = torch.Tensor([[-1, 0], [0, 1]])
+            b = torch.Tensor([crop[2] - crop[0], 0])
+            post_rot = A.matmul(post_rot)
+            post_tran = A.matmul(post_tran) + b
+
+        A = self.get_rotation(rotate / 180 * np.pi)
+        b = torch.Tensor([crop[2] - crop[0], crop[3] - crop[1]]) / 2
+        b = A.matmul(-b) + b
+        post_rot = A.matmul(post_rot)
+        post_tran = A.matmul(post_tran) + b
+
+        return image, post_rot, post_tran
+
+    def image_transform_core(self, image, resize_dims, crop, flip, rotate):
+        image = image.resize(resize_dims)
+        image = image.crop(crop)
+
+        if flip:
+            image = image.transpose(method=Image.FLIP_LEFT_RIGHT)
+
+        image = image.rotate(rotate)
+        return image
+
+    def choose_cams(self):
+        if self.is_train and self.data_config['Ncams'] < len(self.data_config['cams']):
+            cam_names = np.random.choice(self.data_config['cams'], self.data_config['Ncams'], replace=False)
+        else:
+            cam_names = self.data_config['cams']
+        return cam_names
+
+    def sample_augmentation(self, H, W, flip=None, scale=None):
+        fH, fW = self.data_config['input_size']
+
+        if self.is_train:
+            resize = float(fW) / float(W)
+            resize += np.random.uniform(*self.data_config['resize'])
+            resize_dims = (int(W * resize), int(H * resize))
+            newW, newH = resize_dims
+            crop_h = int((1 - np.random.uniform(*self.data_config['crop_h'])) *
+                         newH) - fH
+            crop_w = int(np.random.uniform(0, max(0, newW - fW)))
+            crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
+            flip = self.data_config['flip'] and np.random.choice([0, 1])
+            rotate = np.random.uniform(*self.data_config['rot'])
+        else:
+            resize = float(fW) / float(W)
+            if scale is not None:
+                resize += scale
+            else:
+                resize += self.data_config.get('resize_test', 0.0)
+            resize_dims = (int(W * resize), int(H * resize))
+            newW, newH = resize_dims
+            crop_h = int((1 - np.mean(self.data_config['crop_h'])) * newH) - fH
+            crop_w = int(max(0, newW - fW) / 2)
+            crop = (crop_w, crop_h, crop_w + fW, crop_h + fH)
+            flip = False if flip is None else flip
+            rotate = 0
+
+        return resize, resize_dims, crop, flip, rotate
+
+    def get_sensor2lidar(self, cam_info, cam_name):
+        w, x, y, z = cam_info['cams'][cam_name]['sensor2ego_rotation']
+        sensor2lidar_rototation = torch.Tensor(cam_info['cams'][cam_name]['sensor2lidar_rotation'])
+        sensor2lidar_translation = torch.Tensor(cam_info['cams'][cam_name]['sensor2lidar_translation'])
+        sensor2lidar = sensor2lidar_rototation.new_zeros((4, 4))
+        sensor2lidar[3, 3] = 1
+        sensor2lidar[:3, :3] = sensor2lidar_rototation
+        sensor2lidar[:3, 3] = sensor2lidar_translation
+        return sensor2lidar
+
+    def get_inputs(self, results, flip=None, scale=None):
+        images = []
+        sensor2lidars = []
+        intrins = []
+        post_rots = []
+        post_trans = []
+        cam_names = self.choose_cams()
+        results['cam_names'] = cam_names
+        canvas = []
+
+        for cam_name in cam_names:
+            cam_data = results['curr']['cams'][cam_name]
+            filename = cam_data['data_path']
+            img = Image.open(filename)
+            post_rot = torch.eye(2)
+            post_tran = torch.zeros(2)
+            intrin = torch.Tensor(cam_data['cam_intrinsic'])
+            sensor2lidar = self.get_sensor2lidar(results['curr'], cam_name)
+
+            # image view augmentation (resize, crop, horizontal flip, rotate)
+            img_augs = self.sample_augmentation(H=img.height, W=img.width, flip=flip, scale=scale)
+            resize, resize_dims, crop, flip, rotate = img_augs
+            img, post_rot2, post_tran2 = self.image_transform(img,
+                                                            post_rot,
+                                                            post_tran,
+                                                            resize=resize,
+                                                            resize_dims=resize_dims,
+                                                            crop=crop,
+                                                            flip=flip,
+                                                            rotate=rotate)
+
+            # for convenience, make augmentation matrices 3x3
+            post_tran = torch.zeros(3)
+            post_rot = torch.eye(3)
+            post_tran[:2] = post_tran2
+            post_rot[:2, :2] = post_rot2
+
+            canvas.append(np.array(img))
+            images.append(self.normalize_img(img))
+
+            intrins.append(intrin)
+            sensor2lidars.append(sensor2lidar)
+            post_rots.append(post_rot)
+            post_trans.append(post_tran)
+
+        images = torch.stack(images)
+        sensor2lidars = torch.stack(sensor2lidars)
+        intrins = torch.stack(intrins)
+        post_rots = torch.stack(post_rots)
+        post_trans = torch.stack(post_trans)
+        results['canvas'] = canvas
+        return (images, sensor2lidars, intrins, post_rots, post_trans)
+
+    def __call__(self, results):
+        results['img_inputs'] = self.get_inputs(results)
         return results

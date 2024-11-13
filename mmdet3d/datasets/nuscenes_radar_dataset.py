@@ -271,10 +271,11 @@ class NuScenesRadarDataset(Custom3DDataset):
 
         if self.modality["use_camera"]:
             if self.img_info_prototype == "mmcv":
-                image_paths = []
-                lidar2img_rts = []
+                images = {}
+                # image_paths = []
+                # lidar2img_rts = []
                 for cam_type, cam_info in info["cams"].items():
-                    image_paths.append(cam_info["data_path"])
+                    # image_paths.append(cam_info["data_path"])
                     # obtain lidar to image transformation matrix
                     lidar2cam_r = np.linalg.inv(cam_info["sensor2lidar_rotation"])
                     lidar2cam_t = cam_info["sensor2lidar_translation"] @ lidar2cam_r.T
@@ -285,14 +286,19 @@ class NuScenesRadarDataset(Custom3DDataset):
                     viewpad = np.eye(4)
                     viewpad[: intrinsic.shape[0], : intrinsic.shape[1]] = intrinsic
                     lidar2img_rt = viewpad @ lidar2cam_rt.T
-                    lidar2img_rts.append(lidar2img_rt)
+                    # lidar2img_rts.append(lidar2img_rt)
 
-                input_dict.update(
-                    dict(
-                        img_filename=image_paths,
-                        lidar2img=lidar2img_rts,
-                    )
-                )
+                    cam_item = {
+                        "lidar2cam": lidar2cam_rt,
+                        "lidar2img": lidar2img_rt,
+                        "img_path": cam_info["data_path"],
+                        "cam2img": intrinsic
+                    }
+                    images[cam_type] = cam_item
+
+                input_dict.update({
+                    "images": images
+                })
 
                 if not self.test_mode:
                     annos = self.get_ann_info(index)

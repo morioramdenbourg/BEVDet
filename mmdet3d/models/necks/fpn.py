@@ -73,6 +73,8 @@ class CustomFPN(BaseModule):
                  norm_cfg=None,
                  act_cfg=None,
                  upsample_cfg=dict(mode='nearest'),
+                 freeze_lateral=False,
+                 freeze_fpn_convs=False,
                  init_cfg=dict(
                      type='Xavier', layer='Conv2d', distribution='uniform')):
         super(CustomFPN, self).__init__(init_cfg)
@@ -149,6 +151,15 @@ class CustomFPN(BaseModule):
                     act_cfg=act_cfg,
                     inplace=False)
                 self.fpn_convs.append(extra_fpn_conv)
+
+        if freeze_lateral:
+            for param in self.lateral_convs.parameters():
+                param.requires_grad = False
+
+        if freeze_fpn_convs:
+            for param in self.fpn_convs.parameters():
+                param.requires_grad = False
+
 
     @auto_fp16()
     def forward(self, inputs):

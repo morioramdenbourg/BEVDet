@@ -222,6 +222,8 @@ def main():
         test_cfg=cfg.get('test_cfg'))
     model.init_weights()
 
+    print([name for name, param in model.named_parameters() if param.requires_grad])
+
     logger.info(f'Model:\n{model}')
     datasets = [build_dataset(cfg.data.train)]
     if len(cfg.workflow) == 2:

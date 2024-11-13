@@ -1,3 +1,28 @@
+"""
+mAP: 0.0369
+mATE: 0.9371
+mASE: 0.9182
+mAOE: 0.9282
+mAVE: 0.9237
+mAAE: 0.8934
+NDS: 0.0584
+Eval time: 40.9s
+
+Per-class results:
+Object Class	AP	ATE	ASE	AOE	AVE	AAE
+car	0.369	0.371	0.182	0.354	0.390	0.147
+truck	0.000	1.000	1.000	1.000	1.000	1.000
+bus	0.000	1.000	1.000	1.000	1.000	1.000
+trailer	0.000	1.000	1.000	1.000	1.000	1.000
+construction_vehicle	0.000	1.000	1.000	1.000	1.000	1.000
+pedestrian	0.000	1.000	1.000	1.000	1.000	1.000
+motorcycle	0.000	1.000	1.000	1.000	1.000	1.000
+bicycle	0.000	1.000	1.000	1.000	1.000	1.000
+traffic_cone	0.000	1.000	1.000	nan	nan	nan
+barrier	0.000	1.000	1.000	1.000	nan	nan
+{'pts_bbox_NuScenes/car_AP_dist_0.5': 0.2215, 'pts_bbox_NuScenes/car_AP_dist_1.0': 0.3666, 'pts_bbox_NuScenes/car_AP_dist_2.0': 0.422, 'pts_bbox_NuScenes/car_AP_dist_4.0': 0.4677, 'pts_bbox_NuScenes/car_trans_err': 0.3709, 'pts_bbox_NuScenes/car_scale_err': 0.1818, 'pts_bbox_NuScenes/car_orient_err': 0.3541, 'pts_bbox_NuScenes/car_vel_err': 0.3896, 'pts_bbox_NuScenes/car_attr_err': 0.1469, 'pts_bbox_NuScenes/mATE': 0.9371, 'pts_bbox_NuScenes/mASE': 0.9182, 'pts_bbox_NuScenes/mAOE': 0.9282, 'pts_bbox_NuScenes/mAVE': 0.9237, 'pts_bbox_NuScenes/mAAE': 0.8934, 'pts_bbox_NuScenes/NDS': 0.058417273419596585, 'pts_bbox_NuScenes/mAP': 0.03694703107221868}
+"""
+
 _base_ = [
     '../_base_/schedules/schedule_2x.py',
     '../_base_/datasets/nus-3d.py',
@@ -9,8 +34,8 @@ class_names = [
 ]
 data_root = 'data/nuscenes/'
 dataset_type = 'NuScenesRadarDataset'
-config_file_prefix = 'full'
-# config_file_prefix = 'small'
+# config_file_prefix = 'full'
+config_file_prefix = 'small'
 workflow = [('train', 1), ('val', 1)]
 
 batch_size = 6

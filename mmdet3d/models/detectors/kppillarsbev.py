@@ -68,11 +68,6 @@ class KPPillarsBEV(CenterPoint):
         pts_coords = torch.cat(pts_coords, dim=0)
         x = torch.cat(x, dim=0)
 
-        # for preprocessor in self.pts_preprocessors:
-        #     x = preprocessor(pts_coords, pts_coords, q_batches, q_batches, x)
-
-        # aug_pts = [torch.cat([c, f], dim=1) for c, f in zip(pts_coords, x)]
-
         aug_pts = torch.cat([pts_coords, x], dim=1)
         aug_pts = aug_pts.split(q_batches, dim=0)
 

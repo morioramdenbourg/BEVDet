@@ -1,12 +1,13 @@
 import torch
 from mmcv.cnn import build_norm_layer
+from mmcv.runner import BaseModule
 from torch import nn
 from ..builder import VOXEL_ENCODERS
 from ...ops.kpconv.models.blocks import SimpleBlock
 
 
 @VOXEL_ENCODERS.register_module()
-class KPBEVEncoder(nn.Module):
+class KPBEVEncoder(BaseModule):
 
     def __init__(self,
                  in_channels,
@@ -14,8 +15,10 @@ class KPBEVEncoder(nn.Module):
                  point_cloud_range,
                  voxel_size,
                  norm_cfg,
-                 kpconv_args):
-        super(KPBEVEncoder, self).__init__()
+                 kpconv_args,
+                 freeze=False,
+                 init_cfg=None):
+        super(KPBEVEncoder, self).__init__(init_cfg)
         self.in_channels = in_channels
         self.out_channels = out_channels
 
@@ -33,6 +36,13 @@ class KPBEVEncoder(nn.Module):
         self.linear_2 = nn.Sequential(nn.Linear(self.out_channels, self.out_channels),
                                       linear_2_norm[1],
                                       nn.ReLU())
+
+        if freeze:
+            self.freeze_parameters()
+
+    def freeze_parameters(self):
+        for param in self.parameters():
+            param.requires_grad = False
 
     def forward(self, voxels, coors, num_points_per_voxel, pts):
         coors_range_min_zyx = torch.tensor([self.coors_range_min[2], self.coors_range_min[1], self.coors_range_min[0]],

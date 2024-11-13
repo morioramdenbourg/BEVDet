@@ -5,8 +5,11 @@ import mmcv
 import torch
 from mmcv.image import tensor2imgs
 
-from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
-                            SingleStageMono3DDetector)
+# from mmdet3d.models import (Base3DDetector, Base3DSegmentor,
+#                             SingleStageMono3DDetector)
+from ..models.detectors.base import Base3DDetector
+from ..models.segmentors.base import Base3DSegmentor
+from ..models.detectors.single_stage_mono3d import SingleStageMono3DDetector
 
 
 def single_gpu_test(model,

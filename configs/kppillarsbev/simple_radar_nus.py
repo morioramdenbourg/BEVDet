@@ -1,3 +1,28 @@
+"""
+mAP: 0.0299
+mATE: 0.8847
+mASE: 0.7774
+mAOE: 0.8270
+mAVE: 1.0152
+mAAE: 0.6956
+NDS: 0.0964
+Eval time: 54.5s
+
+Per-class results:
+Object Class	AP	ATE	ASE	AOE	AVE	AAE
+car	0.245	0.438	0.191	0.380	0.718	0.213
+truck	0.017	0.663	0.340	0.657	0.908	0.221
+bus	0.036	0.746	0.244	0.405	1.496	0.130
+trailer	0.000	1.000	1.000	1.000	1.000	1.000
+construction_vehicle	0.000	1.000	1.000	1.000	1.000	1.000
+pedestrian	0.000	1.000	1.000	1.000	1.000	1.000
+motorcycle	0.000	1.000	1.000	1.000	1.000	1.000
+bicycle	0.000	1.000	1.000	1.000	1.000	1.000
+traffic_cone	0.000	1.000	1.000	nan	nan	nan
+barrier	0.000	1.000	1.000	1.000	nan	nan
+{'pts_bbox_NuScenes/car_AP_dist_0.5': 0.1206, 'pts_bbox_NuScenes/car_AP_dist_1.0': 0.2334, 'pts_bbox_NuScenes/car_AP_dist_2.0': 0.2878, 'pts_bbox_NuScenes/car_AP_dist_4.0': 0.3385, 'pts_bbox_NuScenes/car_trans_err': 0.4381, 'pts_bbox_NuScenes/car_scale_err': 0.1906, 'pts_bbox_NuScenes/car_orient_err': 0.3804, 'pts_bbox_NuScenes/car_vel_err': 0.7182, 'pts_bbox_NuScenes/car_attr_err': 0.2134, 'pts_bbox_NuScenes/mATE': 0.8847, 'pts_bbox_NuScenes/mASE': 0.7774, 'pts_bbox_NuScenes/mAOE': 0.827, 'pts_bbox_NuScenes/mAVE': 1.0152, 'pts_bbox_NuScenes/mAAE': 0.6956, 'pts_bbox_NuScenes/truck_AP_dist_0.5': 0.0, 'pts_bbox_NuScenes/truck_AP_dist_1.0': 0.0061, 'pts_bbox_NuScenes/truck_AP_dist_2.0': 0.0186, 'pts_bbox_NuScenes/truck_AP_dist_4.0': 0.0453, 'pts_bbox_NuScenes/truck_trans_err': 0.6629, 'pts_bbox_NuScenes/truck_scale_err': 0.3402, 'pts_bbox_NuScenes/truck_orient_err': 0.6573, 'pts_bbox_NuScenes/truck_vel_err': 0.9076, 'pts_bbox_NuScenes/truck_attr_err': 0.221, 'pts_bbox_NuScenes/trailer_AP_dist_0.5': 0.0, 'pts_bbox_NuScenes/trailer_AP_dist_1.0': 0.0, 'pts_bbox_NuScenes/trailer_AP_dist_2.0': 0.0, 'pts_bbox_NuScenes/trailer_AP_dist_4.0': 0.0, 'pts_bbox_NuScenes/trailer_trans_err': 1.0, 'pts_bbox_NuScenes/trailer_scale_err': 1.0, 'pts_bbox_NuScenes/trailer_orient_err': 1.0, 'pts_bbox_NuScenes/trailer_vel_err': 1.0, 'pts_bbox_NuScenes/trailer_attr_err': 1.0, 'pts_bbox_NuScenes/bus_AP_dist_0.5': 0.0, 'pts_bbox_NuScenes/bus_AP_dist_1.0': 0.0208, 'pts_bbox_NuScenes/bus_AP_dist_2.0': 0.052, 'pts_bbox_NuScenes/bus_AP_dist_4.0': 0.071, 'pts_bbox_NuScenes/bus_trans_err': 0.7464, 'pts_bbox_NuScenes/bus_scale_err': 0.2436, 'pts_bbox_NuScenes/bus_orient_err': 0.4052, 'pts_bbox_NuScenes/bus_vel_err': 1.4961, 'pts_bbox_NuScenes/bus_attr_err': 0.1304, 'pts_bbox_NuScenes/construction_vehicle_AP_dist_0.5': 0.0, 'pts_bbox_NuScenes/construction_vehicle_AP_dist_1.0': 0.0, 'pts_bbox_NuScenes/construction_vehicle_AP_dist_2.0': 0.0, 'pts_bbox_NuScenes/construction_vehicle_AP_dist_4.0': 0.0, 'pts_bbox_NuScenes/construction_vehicle_trans_err': 1.0, 'pts_bbox_NuScenes/construction_vehicle_scale_err': 1.0, 'pts_bbox_NuScenes/construction_vehicle_orient_err': 1.0, 'pts_bbox_NuScenes/construction_vehicle_vel_err': 1.0, 'pts_bbox_NuScenes/construction_vehicle_attr_err': 1.0, 'pts_bbox_NuScenes/NDS': 0.09644958241452398, 'pts_bbox_NuScenes/mAP': 0.029851322292049093}
+"""
+
 _base_ = [
     '../../../configs/_base_/schedules/schedule_2x.py',
     '../../../configs/_base_/datasets/nus-3d.py',

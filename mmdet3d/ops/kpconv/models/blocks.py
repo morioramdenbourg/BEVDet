@@ -19,6 +19,8 @@ import time
 import math
 import torch
 import torch.nn as nn
+from mmcv.cnn import build_norm_layer
+from mmcv.runner import BaseModule
 from torch.nn.parameter import Parameter
 from torch.nn.init import kaiming_uniform_
 from ..kernels.kernel_points import load_kernels
@@ -200,6 +202,7 @@ class KPConv(nn.Module):
                                       fixed_kernel_points=fixed_kernel_points,
                                       KP_influence=KP_influence,
                                       aggregation_mode=aggregation_mode)
+            # TODO: add logic to freeze
             self.offset_bias = Parameter(torch.zeros(self.offset_dim, dtype=torch.float32), requires_grad=True)
 
         else:
@@ -508,7 +511,7 @@ class UnaryBlock(nn.Module):
 
 class SimpleBlock(nn.Module):
 
-    def __init__(self, block_name, in_dim, out_dim, radius, config):
+    def __init__(self, block_name, in_dim, out_dim, radius, norm_cfg, config):
         """
         Initialize a simple convolution block with its ReLU and BatchNorm.
         :param in_dim: dimension input features
@@ -521,23 +524,16 @@ class SimpleBlock(nn.Module):
         # get KP_extent from current radius
         current_extent = radius * config.KP_extent / config.conv_radius
 
-        # Get other parameters
-        self.bn_momentum = config.batch_norm_momentum
-        self.use_bn = config.use_batch_norm
-        # self.layer_ind = layer_ind
         self.block_name = block_name
         self.in_dim = in_dim
         self.out_dim = out_dim
         self.conv_radius = config.conv_radius
         self.neighborhood_limit = config.neighborhood_limit
-        self.use_gn = config.use_group_norm
-        self.num_groups = config.num_groups
 
         # Define the KPConv class
         self.KPConv = KPConv(config.num_kernel_points,
                              config.in_points_dim,
                              in_dim,
-                             # out_dim // 2,
                              out_dim,
                              current_extent,
                              radius,
@@ -547,17 +543,8 @@ class SimpleBlock(nn.Module):
                              deformable='deform' in block_name,
                              modulated=config.modulated)
 
-        # Other opperations
-        # self.batch_norm = BatchNormBlock(out_dim // 2, self.use_bn, self.bn_momentum)
-        if self.use_gn and self.use_bn:
-            raise ValueError('Cannot use both Group Norm and Batch Norm')
-
-        if self.use_gn:
-            self.norm = nn.GroupNorm(num_groups=self.num_groups, num_channels=out_dim)
-        else:
-            self.norm = BatchNormBlock(out_dim, self.use_bn, self.bn_momentum)
+        self.norm = build_norm_layer(norm_cfg, self.out_dim)[1]
         self.leaky_relu = nn.LeakyReLU(0.1)
-
         return
 
     # def forward(self, x, batch):

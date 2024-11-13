@@ -1,3 +1,9 @@
+"""
+Per-class results: Object Class  AP  ATE  ASE  AOE  AVE  AAE car  0.153  0.484  0.197  0.634  1.328  0.309
+ 
+{'pts_bbox_NuScenes/car_AP_dist_0.5': 0.0581, 'pts_bbox_NuScenes/car_AP_dist_1.0': 0.1336, 'pts_bbox_NuScenes/car_AP_dist_2.0': 0.1859, 'pts_bbox_NuScenes/car_AP_dist_4.0': 0.2342, 'pts_bbox_NuScenes/car_trans_err': 0.4838, 'pts_bbox_NuScenes/car_scale_err': 0.1967, 'pts_bbox_NuScenes/car_orient_err': 0.6344, 'pts_bbox_NuScenes/car_vel_err': 1.3277, 'pts_bbox_NuScenes/car_attr_err': 0.3087, 'pts_bbox_NuScenes/mATE': 0.9484, 'pts_bbox_NuScenes/mASE': 0.9197, 'pts_bbox_NuScenes/mAOE': 0.9594, 'pts_bbox_NuScenes/mAVE': 1.041, 'pts_bbox_NuScenes/mAAE': 0.9136, 'pts_bbox_NuScenes/NDS': 0.033546784392579534, 'pts_bbox_NuScenes/mAP': 0.015293967141308304}
+"""
+
 _base_ = [
     '../_base_/schedules/schedule_2x.py',
     '../_base_/datasets/nus-3d.py',

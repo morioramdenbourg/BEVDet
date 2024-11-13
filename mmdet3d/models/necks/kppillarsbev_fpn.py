@@ -1,21 +1,25 @@
 import torch
 import torch.nn as nn
 from mmcv.cnn import build_norm_layer
+from mmcv.runner import BaseModule
+
 from ..builder import NECKS
 from .. import builder
 
 
 @NECKS.register_module()
-class KPPillarsBEVFPN(nn.Module):
+class KPPillarsBEVFPN(BaseModule):
 
     def __init__(self,
                  in_channels,
                  out_channels,
                  scale_factors,
                  input_feature_index,
-                 resnet_cfg,
-                 norm_cfg=dict(type='BN')):
-        super().__init__()
+                 resnet_cfg=None,
+                 norm_cfg=dict(type='BN'),
+                 freeze=False,
+                 init_cfg=None):
+        super().__init__(init_cfg)
         self.input_feature_index = input_feature_index
 
         # Upsample layers
@@ -35,9 +39,12 @@ class KPPillarsBEVFPN(nn.Module):
             self.lateral_layers.append(lateral_conv)
 
         # resnset layers between each pyramid layer
-        self.resnet_layers = nn.ModuleList()
-        for resnet_layer in resnet_cfg:
-            self.resnet_layers.append(builder.build_backbone(resnet_layer))
+        if resnet_cfg:
+            self.resnet_layers = nn.ModuleList()
+            for resnet_layer in resnet_cfg:
+                self.resnet_layers.append(builder.build_backbone(resnet_layer))
+        else:
+            self.resnet_layers = None
 
         # Final Conv Layer (tailored to task)
         self.conv = nn.Sequential(
@@ -50,6 +57,13 @@ class KPPillarsBEVFPN(nn.Module):
             build_norm_layer(norm_cfg, out_channels, postfix=0)[1],
             nn.ReLU(inplace=True)
         )
+
+        if freeze:
+            self.freeze_parameters()
+
+    def freeze_parameters(self):
+        for param in self.parameters():
+            param.requires_grad = False
 
     def forward(self, feats):
         fused_features = feats[self.input_feature_index[0]]
@@ -66,7 +80,8 @@ class KPPillarsBEVFPN(nn.Module):
             fused_features = fused_features + upsample
 
             # resnet
-            fused_features = self.resnet_layers[i](fused_features)[0]
+            if self.resnet_layers:
+                fused_features = self.resnet_layers[i](fused_features)[0]
 
         # final conv layer
         fused_features = self.conv(fused_features)

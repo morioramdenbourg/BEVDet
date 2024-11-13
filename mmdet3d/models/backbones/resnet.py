@@ -1,6 +1,7 @@
 # Copyright (c) Phigent Robotics. All rights reserved.
 
 import torch.utils.checkpoint as checkpoint
+from mmcv.runner import BaseModule
 from torch import nn
 
 from mmcv.cnn.bricks.conv_module import ConvModule
@@ -9,7 +10,7 @@ from mmdet.models.backbones.resnet import BasicBlock, Bottleneck
 
 
 @BACKBONES.register_module()
-class CustomResNet(nn.Module):
+class CustomResNet(BaseModule):
 
     def __init__(
             self,
@@ -21,8 +22,10 @@ class CustomResNet(nn.Module):
             norm_cfg=dict(type='BN'),
             with_cp=False,
             block_type='Basic',
+            freeze=False,
+            init_cfg=None,
     ):
-        super(CustomResNet, self).__init__()
+        super(CustomResNet, self).__init__(init_cfg)
         # build backbone
         assert len(num_layer) == len(stride)
         num_channels = [numC_input*2**(i+1) for i in range(len(num_layer))] \
@@ -71,6 +74,13 @@ class CustomResNet(nn.Module):
         self.layers = nn.Sequential(*layers)
 
         self.with_cp = with_cp
+
+        if freeze:
+            self.freeze_parameters()
+
+    def freeze_parameters(self):
+        for param in self.parameters():
+            param.requires_grad = False
 
     def forward(self, x):
         feats = []

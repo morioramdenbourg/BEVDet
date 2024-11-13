@@ -23,13 +23,13 @@ class BEVDet(CenterPoint):
         img_bev_encoder_neck (dict): Configuration dict of the BEV encoder neck.
     """
 
-    def __init__(self, img_view_transformer, img_bev_encoder_backbone,
-                 img_bev_encoder_neck, **kwargs):
+    def __init__(self, img_view_transformer=None, img_bev_encoder_backbone=None,
+                 img_bev_encoder_neck=None, **kwargs):
         super(BEVDet, self).__init__(**kwargs)
-        self.img_view_transformer = builder.build_neck(img_view_transformer)
+        self.img_view_transformer = builder.build_neck(img_view_transformer) if img_view_transformer is not None else None
         self.img_bev_encoder_backbone = \
-            builder.build_backbone(img_bev_encoder_backbone)
-        self.img_bev_encoder_neck = builder.build_neck(img_bev_encoder_neck)
+            builder.build_backbone(img_bev_encoder_backbone) if img_bev_encoder_backbone is not None else None
+        self.img_bev_encoder_neck = builder.build_neck(img_bev_encoder_neck) if img_bev_encoder_neck is not None else None
 
     def image_encoder(self, img, stereo=False):
         imgs = img
@@ -60,8 +60,7 @@ class BEVDet(CenterPoint):
         # split the inputs into each frame
         assert len(inputs) == 7
         B, N, C, H, W = inputs[0].shape
-        imgs, sensor2egos, ego2globals, intrins, post_rots, post_trans, bda = \
-            inputs
+        imgs, sensor2egos, ego2globals, intrins, post_rots, post_trans, bda = inputs
 
         sensor2egos = sensor2egos.view(B, N, 4, 4)
         ego2globals = ego2globals.view(B, N, 4, 4)
@@ -69,12 +68,10 @@ class BEVDet(CenterPoint):
         # calculate the transformation from sweep sensor to key ego
         keyego2global = ego2globals[:, 0,  ...].unsqueeze(1)
         global2keyego = torch.inverse(keyego2global.double())
-        sensor2keyegos = \
-            global2keyego @ ego2globals.double() @ sensor2egos.double()
+        sensor2keyegos = global2keyego @ ego2globals.double() @ sensor2egos.double()
         sensor2keyegos = sensor2keyegos.float()
 
-        return [imgs, sensor2keyegos, ego2globals, intrins,
-                post_rots, post_trans, bda]
+        return [imgs, sensor2keyegos, ego2globals, intrins, post_rots, post_trans, bda]
 
     def extract_img_feat(self, img, img_metas, **kwargs):
         """Extract features of images."""
